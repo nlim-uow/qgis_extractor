@@ -1,9 +1,10 @@
-## API Keys, Users may signup for a free account with id.koordinates.com and issue an API key.  
+### Configuration
+## API Keys, Users can signup for a free account with id.koordinates.com to be issued an API key.  
 lris_api_key=''
 data_api_key=''
 basemap_api_key=''
 
-## API Links to layer - please refer to LINZ portal (data.linz.govt.nz) for list of possible raster layers and corresponding index layers.  
+## API Links to layer - please refer to LINZ portal (data.linz.govt.nz) for list raster layers and corresponding index layers.  
 ## 
 lcdb_layer=f"WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='lris.scinfo.org.nz:layer-104400' url='https://lris.scinfo.org.nz/services;key={lris_api_key}/wfs/layer-104400' version='2.0.0'"
 ##
@@ -13,31 +14,26 @@ raster_layer = f'SmoothPixmapTransform=1&contextualWMSLegend=0&crs=EPSG:2193&dpi
 
 maskRoot='/tmp/dataset/mask/' # Output directory for segmentation masks
 clfRoot='/tmp/dataset/img/'   # Output directory for image files
-img_count=0       
 bb_size=112       # 
 out_res=224       # Output png size, spatial resolution is bb_size/out_res
 sample_count=5000 # Number of samples
 min_distance=10   # Minimum Distance between samples
 class_idx=5       # To accomodate future changes to the database
+classNumbers=[1,2,5,6,10,12,14,15,16,20,21,22,30,33,40,41,43,44,45,46,47,50,51,52,54,55,56,58,64,68,69,70,71] # List of classes of interest
 
-## Preprocessing routine to generate intermediate files
 
+### Preprocessing routine to generate intermediate files
 processing.run("native:dissolve", {'INPUT':raster_index ,'FIELD':[],'SEPARATE_DISJOINT':False,'OUTPUT':'ogr:dbname=\'area_mask.gpkg\' table="area_mask" (geom)'})
-
 processing.run("native:intersection", {'INPUT':lcdb_layer,'OVERLAY':'area_mask.gpkg|layername=area_mask','INPUT_FIELDS':[],'OVERLAY_FIELDS':[],'OVERLAY_FIELDS_PREFIX':'','OUTPUT':'ogr:dbname=\'filtered_lcdb.gpkg\' table="filtered_lcdb" (geom)','GRID_SIZE':None})
-
 processing.run("native:dissolve", {'INPUT':'filtered_lcdb.gpkg|layername=filtered_lcdb','FIELD':['Class_2018'],'SEPARATE_DISJOINT':False,'OUTPUT':'ogr:dbname=\'dissolved_lcdb.gpkg\' table="dissolved_lcdb" (geom)'})
-
 processing.run("qgis:randompointsinsidepolygons", {'INPUT':'dissolved_lcdb.gpkg|layername=dissolved_lcdb','STRATEGY':0,'VALUE':sample_count,'MIN_DISTANCE':min_distance,'OUTPUT':'ogr:dbname=\'random_samples.gpkg\' table="random_samples" (geom)'})
-
 processing.run("native:rectanglesovalsdiamonds", {'INPUT':'random_samples.gpkg|layername=random_samples','SHAPE':0,'WIDTH':112,'HEIGHT':112,'ROTATION':0,'SEGMENTS':5,'OUTPUT':'ogr:dbname=\'buffered_samples.gpkg\' table="buffered_samples" (geom)'})
-
 processing.run("native:intersection", {'INPUT':'filtered_lcdb.gpkg|layername=filtered_lcdb','OVERLAY':'buffered_samples.gpkg|layername=buffered_samples','INPUT_FIELDS':[],'OVERLAY_FIELDS':[],'OVERLAY_FIELDS_PREFIX':'','OUTPUT':'ogr:dbname=\'lcdb_of_samples.gpkg\' table="lcdb_of_samples" (geom)','GRID_SIZE':None})
 
-
+### Image generation loop
 os.makedirs(f'{maskRoot}/',exist_ok=True)
 os.makedirs(f'{clfRoot}/',exist_ok=True)
-classNumbers=[1,2,5,6,10,12,14,15,16,20,21,22,30,33,40,41,43,44,45,46,47,50,51,52,54,55,56,58,64,68,69,70,71]
+img_count=0       
 masks = QgsVectorLayer('lcdb_of_samples.gpkg')
 samples = QgsVectorLayer('buffered_samples.gpkg')
 color = QColor(0, 0, 0, 255)
@@ -75,6 +71,7 @@ for feature in samples.getFeatures():
         if img_count%1000==0:
             print(f"Generated {img_count} images")
         cls_no=feature_mask.attributes()[class_idx]
+        cls_no=int(cls_no)
         if cls_no==0:
             continue
         cls_img_id=visibleClass[cls_no]
@@ -83,14 +80,14 @@ for feature in samples.getFeatures():
         clipArea=feature_mask.geometry()
         segmask = QgsGeometry.fromRect(clipArea_bb).difference(clipArea)
         color = QColor(0, 0, 0, 255)
-        img = QImage(int(outres),int(outres), QImage.Format_ARGB32_Premultiplied)
+        img = QImage(int(out_res),int(out_res), QImage.Format_ARGB32_Premultiplied)
         img.fill(color.rgba())
         p = QPainter()
         p.begin(img)
         p.setRenderHint(QPainter.Antialiasing)
         ms = QgsMapSettings()
         ms.setBackgroundColor(color)
-        wmsLayer = QgsRasterLayer(url_with_params,'base_map','wms')
+        wmsLayer = QgsRasterLayer(raster_layer,'base_map','wms')
         wmsLayer.setExtent(clipArea_bb)
         vl=QgsVectorLayer("Polygon","temp","memory")
         vl.setCrs(wmsLayer.crs())
