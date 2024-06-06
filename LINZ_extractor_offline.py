@@ -48,7 +48,7 @@ for feature in samples.getFeatures():
     visibleClass={}
     for i in classNumbers:
         visibleClass[i]=0
-    feature_masks=masks.getFeatures(QgsFeatureRequest().setFilterExpression(f'"fid2" = {rand_id}'))
+    feature_masks=masks.getFeatures(QgsFeatureRequest().setFilterExpression(f'"fid_2" = {rand_id}'))
     clipArea_bb=feature.geometry().boundingBox()
     img2= QImage(out_res,out_res, QImage.Format_ARGB32_Premultiplied)
     img2.fill(color.rgba())
