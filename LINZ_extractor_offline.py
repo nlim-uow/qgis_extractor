@@ -1,43 +1,45 @@
-## API Keys, Users may signup for a free account with id.koordinates.com and issue an API key.  
-lris_api_key=''
-data_api_key=''
-basemap_api_key=''
+script_path=os.path.dirname(__file__)
+with open(f'{script_path}/extract_qgis.yaml','r') as fp:
+    params=yaml.load(fp)
 
-## API Links to layer - please refer to LINZ portal (data.linz.govt.nz) for list of possible raster layers and corresponding index layers.  
-## 
-lcdb_layer=f"WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='lris.scinfo.org.nz:layer-104400' url='https://lris.scinfo.org.nz/services;key={lris_api_key}/wfs/layer-104400' version='2.0.0'"
-##
-raster_index=f"WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='data.linz.govt.nz:layer-52112' url='https://data.linz.govt.nz/services;key={data_api_key}/wfs/layer-52112' version='2.0.0'"
-raster_layer = f'SmoothPixmapTransform=1&contextualWMSLegend=0&crs=EPSG:2193&dpiMode=7&format=image/png&layers=layer-52109&styles=style%3Dauto&tileMatrixSet=EPSG:2193&url=https://data.linz.govt.nz/services;key={data_api_key}/wmts/1.0.0/layer/52109/WMTSCapabilities.xml'
-##
+lris_api_key=params['lris_api_key']
+data_api_key=params['data_api_key']
+basemap_api_key=params['basemap_api_key']
 
-maskRoot='/tmp/dataset/mask/' # Output directory for segmentation masks
-clfRoot='/tmp/dataset/img/'   # Output directory for image files
-img_count=0       
-bb_size=112       # 
-out_res=224       # Output png size, spatial resolution is bb_size/out_res
-sample_count=5000 # Number of samples
-min_distance=10   # Minimum Distance between samples
-class_idx=5       # To accomodate future changes to the database
+lcdb_layer=params['lcdb_layer']
+lcdb_layer=lcdb_layer.replace('{LRIS_API_KEY}',lris_api_key)
+
+raster_index=params['raster_index']
+raster_index=raster_index.replace('{DATA_API_KEY}',data_api_key)
+raster_index=raster_index.replace('{BASEMAP_API_KEY}',basemap_api_key)
+
+raster_layer = params['raster_layer']
+raster_layer = raster_layer.replace('{DATA_API_KEY}',data_api_key)
+raster_layer = raster_layer.replace('{BASEMAP_API_KEY}',data_api_key)
+
+maskRoot=params['maskRoot']                 # Output directory for segmentation masks
+clfRoot=params['clfRoot']                   # Output directory for image files
+bb_size=int(params['bb_size'])              # Physical size of extracted region (in meters)
+out_res=int(params['out_res'])              # Output png size, spatial resolution is bb_size/out_res
+sample_count=int(params['sample_count'])    # Number of samples
+min_distance=int(params['min_distance'])    # Minimum Distance between samples
+class_idx=int(params['class_idx'])          # To accomodate future changes to the database
+classNumbers=params['classNumbers']         # list of interested classes
 
 ## Preprocessing routine to generate intermediate files
-
 processing.run("native:dissolve", {'INPUT':raster_index ,'FIELD':[],'SEPARATE_DISJOINT':False,'OUTPUT':'ogr:dbname=\'area_mask.gpkg\' table="area_mask" (geom)'})
-
 processing.run("native:intersection", {'INPUT':lcdb_layer,'OVERLAY':'area_mask.gpkg|layername=area_mask','INPUT_FIELDS':[],'OVERLAY_FIELDS':[],'OVERLAY_FIELDS_PREFIX':'','OUTPUT':'ogr:dbname=\'filtered_lcdb.gpkg\' table="filtered_lcdb" (geom)','GRID_SIZE':None})
-
 processing.run("native:dissolve", {'INPUT':'filtered_lcdb.gpkg|layername=filtered_lcdb','FIELD':['Class_2018'],'SEPARATE_DISJOINT':False,'OUTPUT':'ogr:dbname=\'dissolved_lcdb.gpkg\' table="dissolved_lcdb" (geom)'})
-
 processing.run("qgis:randompointsinsidepolygons", {'INPUT':'dissolved_lcdb.gpkg|layername=dissolved_lcdb','STRATEGY':0,'VALUE':sample_count,'MIN_DISTANCE':min_distance,'OUTPUT':'ogr:dbname=\'random_samples.gpkg\' table="random_samples" (geom)'})
-
 processing.run("native:rectanglesovalsdiamonds", {'INPUT':'random_samples.gpkg|layername=random_samples','SHAPE':0,'WIDTH':112,'HEIGHT':112,'ROTATION':0,'SEGMENTS':5,'OUTPUT':'ogr:dbname=\'buffered_samples.gpkg\' table="buffered_samples" (geom)'})
-
 processing.run("native:intersection", {'INPUT':'filtered_lcdb.gpkg|layername=filtered_lcdb','OVERLAY':'buffered_samples.gpkg|layername=buffered_samples','INPUT_FIELDS':[],'OVERLAY_FIELDS':[],'OVERLAY_FIELDS_PREFIX':'','OUTPUT':'ogr:dbname=\'lcdb_of_samples.gpkg\' table="lcdb_of_samples" (geom)','GRID_SIZE':None})
 
 
+## Image generation loop
+img_count=0       
+
 os.makedirs(f'{maskRoot}/',exist_ok=True)
 os.makedirs(f'{clfRoot}/',exist_ok=True)
-classNumbers=[1,2,5,6,10,12,14,15,16,20,21,22,30,33,40,41,43,44,45,46,47,50,51,52,54,55,56,58,64,68,69,70,71]
 masks = QgsVectorLayer('lcdb_of_samples.gpkg')
 samples = QgsVectorLayer('buffered_samples.gpkg')
 color = QColor(0, 0, 0, 255)
@@ -77,20 +79,21 @@ for feature in samples.getFeatures():
         cls_no=feature_mask.attributes()[class_idx]
         if cls_no==0:
             continue
+        cls_no=int(cls_no)
         cls_img_id=visibleClass[cls_no]
         visibleClass[cls_no]=visibleClass[cls_no]+1
         img_by_class_filename=f'{rand_id}_{cls_no}_{cls_img_id}'
         clipArea=feature_mask.geometry()
         segmask = QgsGeometry.fromRect(clipArea_bb).difference(clipArea)
         color = QColor(0, 0, 0, 255)
-        img = QImage(int(outres),int(outres), QImage.Format_ARGB32_Premultiplied)
+        img = QImage(int(out_res),int(out_res), QImage.Format_ARGB32_Premultiplied)
         img.fill(color.rgba())
         p = QPainter()
         p.begin(img)
         p.setRenderHint(QPainter.Antialiasing)
         ms = QgsMapSettings()
         ms.setBackgroundColor(color)
-        wmsLayer = QgsRasterLayer(url_with_params,'base_map','wms')
+        wmsLayer = QgsRasterLayer(raster_layer,'base_map','wms')
         wmsLayer.setExtent(clipArea_bb)
         vl=QgsVectorLayer("Polygon","temp","memory")
         vl.setCrs(wmsLayer.crs())
@@ -112,8 +115,7 @@ for feature in samples.getFeatures():
         render.waitForFinished()
         p.end()
         img.save(f'{maskRoot}/{img_by_class_filename}.png')
-    
-    ohe=', '.join(map(str,list(visibleClass.values())))
+        ohe=', '.join(map(str,list(visibleClass.values())))
     with open(f'{clfRoot}/{img_filename}.txt', 'w') as f:
         f.write(ohe)
     f.close()

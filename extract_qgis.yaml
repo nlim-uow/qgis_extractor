@@ -1,0 +1,25 @@
+## This is a sample yaml file for data extraction, this assumes that the user already have the relevant API keys
+lris_api_key: LRIS_SCINFO_ORG_NZ_API_KEY
+data_api_key: DATA_LINZ_GOVT_NZ_API_KEY
+basemap_api_key: BASEMAP_LINZ_GOVT_NZ_API_KEY
+
+lcdb_layer: "WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='lris.scinfo.org.nz:layer-104400' url='https://lris.scinfo.org.nz/services;key={LRIS_API_KEY}/wfs/layer-104400' version='2.0.0'" 
+## This file extracts images and masks for the region Dunedin
+raster_index : "WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='data.linz.govt.nz:layer-52112' url='https://data.linz.govt.nz/services;key={DATA_API_KEY}/wfs/layer-52112' version='2.0.0'"
+raster_layer : 'SmoothPixmapTransform=1&contextualWMSLegend=0&crs=EPSG:2193&dpiMode=7&format=image/png&layers=layer-52109&styles=style%3Dauto&tileMatrixSet=EPSG:2193&url=https://data.linz.govt.nz/services;key={DATA_API_KEY}/wmts/1.0.0/layer/52109/WMTSCapabilities.xml' 
+
+## For Waikato, users may use the following settings, note that Waikato is significantly larger geographically, and the script may take significantly longer to process
+# raster_index : "WFS://pagingEnabled='true' preferCoordinatesForWfsT11='false' restrictToRequestBBOX='1' typename='data.linz.govt.nz:layer-104585' url='https://data.linz.govt.nz/services;key={DATA_API_KEY}/wfs/layer-104585' version='2.0.0'"
+# raster_layer : 'contextualWMSLegend=0&crs=EPSG:2193&dpiMode=7&featureCount=10&format=image/webp&layers=waikato-rural-2017-2019-0.3m&styles=default&tileMatrixSet=NZTM2000Quad&url=https://basemaps.linz.govt.nz/v1/tiles/aerial/WMTSCapabilities.xml?api={BASEMAP_API_KEY}'
+
+maskRoot: /dataset/mask 	# Output directory for segmentation masks
+clfRoot: /dataset/img   	# Output directory for image files
+bb_size: 112       		# Physical size of the extracted region (in meters)
+out_res: 224       		# Output png resolution, spatial resolution is bb_size/out_res
+sample_count: 50   		# Number of samples per LCDB Class
+min_distance: 10   		# Minimum Distance between samples
+class_idx: 5       		# To accomodate future changes to the database
+
+# List of interested classes
+classNumbers: [1,2,5,6,10,12,14,15,16,20,21,22,30,33,40,41,43,44,45,46,47,50,51,52,54,55,56,58,64,68,69,70,71]
+
